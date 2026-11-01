@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; img-src 'self' nasset: data: blob:; media-src 'self' nasset:; script-src 'self'; style-src 'self' 'unsafe-inline'">
+  <title>NoteApp</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header id="topbar">
+    <nav id="crumbs"></nav>
+    <div id="board-title" spellcheck="false"></div>
+    <div id="top-actions">
+      <button id="btn-search" title="Поиск (Ctrl+F)">
+        <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/></svg>
+      </button>
+      <button id="btn-zoom" title="Масштаб: сбросить (Ctrl+0)">100%</button>
+    </div>
+  </header>
+
+  <aside id="toolbar">
+    <button class="tool" data-tool="note" title="Заметка (N)">
+      <svg viewBox="0 0 24 24"><path d="M5 6h14M5 10h14M5 14h14M5 18h9"/></svg><span>Заметка</span></button>
+    <button class="tool" data-tool="link" title="Ссылка (L)">
+      <svg viewBox="0 0 24 24"><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/></svg><span>Ссылка</span></button>
+    <button class="tool" data-tool="todo" title="Список дел (T)">
+      <svg viewBox="0 0 24 24"><path d="M4 7l2 2 3-4M4 15l2 2 3-4M12 7h8M12 15h8"/></svg><span>To-do</span></button>
+    <button class="tool" data-tool="line" title="Стрелка (A)">
+      <svg viewBox="0 0 24 24"><path d="M5 19L19 5M11 5h8v8"/></svg><span>Стрелка</span></button>
+    <button class="tool" data-tool="board" title="Доска (B)">
+      <svg viewBox="0 0 24 24"><rect x="4" y="4" width="7" height="7" rx="1.5"/><rect x="13" y="4" width="7" height="7" rx="1.5"/><rect x="4" y="13" width="7" height="7" rx="1.5"/><rect x="13" y="13" width="7" height="7" rx="1.5"/></svg><span>Доска</span></button>
+    <div class="tool-sep"></div>
+    <button class="tool" data-tool="image" title="Картинка">
+      <svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2"/><circle cx="9.5" cy="9.5" r="1.6"/><path d="M20 15l-4.5-4.5L6 20"/></svg><span>Картинка</span></button>
+    <button class="tool" data-tool="file" title="Файл">
+      <svg viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></svg><span>Файл</span></button>
+    <div class="tool-spacer"></div>
+    <button class="tool" id="btn-data" title="Открыть папку с данными">
+      <svg viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg><span>Данные</span></button>
+  </aside>
+
+  <main id="viewport" tabindex="-1">
+    <div id="world">
+      <svg id="lines" width="1" height="1">
+        <defs>
+          <marker id="arrow-head" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="13" markerHeight="13" orient="auto-start-reverse" markerUnits="userSpaceOnUse">
+            <path d="M0 0L10 5L0 10z" fill="#4a4f57"/>
+          </marker>
+          <marker id="arrow-head-sel" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="13" markerHeight="13" orient="auto-start-reverse" markerUnits="userSpaceOnUse">
+            <path d="M0 0L10 5L0 10z" fill="#2f7cf6"/>
+          </marker>
+        </defs>
+        <g id="lines-g"></g>
+      </svg>
+      <div id="cards"></div>
+      <svg id="lines-overlay" width="1" height="1"><g id="lines-handles"></g></svg>
+    </div>
+    <div id="marquee" hidden></div>
+    <div id="empty-hint" hidden>
+      <b>Доска пуста</b>
+      Перетащите инструмент слева, дважды щёлкните по холсту, чтобы создать заметку,<br>
+      или вставьте (Ctrl+V) текст, ссылку или картинку.
+    </div>
+  </main>
+
+  <div id="ctx-menu" hidden></div>
+  <div id="modal-root"></div>
+  <div id="toast" hidden></div>
+
+  <script src="util.js"></script>
+  <script src="store.js"></script>
+  <script src="render.js"></script>
+  <script src="format.js"></script>
+  <script src="interact.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
