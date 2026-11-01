@@ -15,7 +15,7 @@ const NOTE_COLORS = {
   dark: { bg: '#33363c', fg: '#f1f2f4' },
 };
 
-const CARD_DEFAULT_W = { note: 280, link: 320, todo: 280, image: 320, file: 240, board: 128 };
+const CARD_DEFAULT_W = { note: 280, link: 320, todo: 280, image: 320, file: 240, board: 128, sketch: 360 };
 
 const Render = {
   els: new Map(), // cardId -> element
@@ -161,6 +161,14 @@ const Render = {
       el('div', { class: 'file-info' },
         el('div', { class: 'file-name', text: card.name || card.file, title: card.name }),
         el('div', { class: 'file-size', text: formatSize(card.size) + ' · двойной щелчок — открыть' }))));
+  },
+
+  body_sketch(card, e) {
+    const strokes = card.strokes || [];
+    const wrap = el('div', { class: 'sketch-wrap' });
+    if (strokes.length) wrap.append(Sketch.svg(strokes));
+    else wrap.append(el('div', { class: 'sketch-empty' }, sketchIcon('pen'), el('span', { text: 'Дважды щёлкните, чтобы рисовать' })));
+    e.append(wrap);
   },
 
   // ---------- выделение ----------

@@ -195,7 +195,7 @@ const Interact = {
 
     if (d.kind === 'resize') {
       d.moved = true;
-      const w = Math.max(d.card.type === 'image' ? 60 : 140, Math.min(1400, d.w + (e.clientX - d.sx) / App.view.z));
+      const w = Math.max(d.card.type === 'image' || d.card.type === 'sketch' ? 90 : 140, Math.min(1400, d.w + (e.clientX - d.sx) / App.view.z));
       d.card.w = Math.round(w);
       Render.position(d.card);
       Render.lines();
@@ -386,6 +386,7 @@ const Interact = {
     if (card.type === 'board') App.open(card.boardId);
     else if (card.type === 'link') window.api.openExternal(card.url);
     else if (card.type === 'image' || card.type === 'file') window.api.openAsset(card.file);
+    else if (card.type === 'sketch') Sketch.open(card);
     else if (App.editingId !== card.id) Edit.start(card.id, { point: { x: e.clientX, y: e.clientY } });
   },
 
@@ -439,6 +440,7 @@ const Interact = {
     if (e.key === 'Enter' && App.selected.size === 1) {
       const c = App.cardById([...App.selected][0]);
       if (c?.type === 'board') App.open(c.boardId);
+      else if (c?.type === 'sketch') Sketch.open(c);
       else if (c) Edit.start(c.id);
       e.preventDefault();
       return;
@@ -461,6 +463,7 @@ const Interact = {
       else if (k === 'l') { e.preventDefault(); Actions.link(pos); }
       else if (k === 'b') { e.preventDefault(); Actions.board(pos); }
       else if (k === 'a') { e.preventDefault(); Actions.line(pos); }
+      else if (k === 'd') { e.preventDefault(); Actions.sketch(pos); }
     }
   },
 
@@ -560,6 +563,7 @@ const Interact = {
         todo: () => Actions.todo(p),
         line: () => Actions.line(p),
         board: () => Actions.board(p),
+        sketch: () => Actions.sketch(p),
         image: () => Actions.pick('image', p),
         file: () => Actions.pick('file', p),
       })[tool]?.();
@@ -652,6 +656,7 @@ const Interact = {
         { label: 'To-do', key: 'T', run: () => Actions.todo(pos) },
         { label: 'Доска', key: 'B', run: () => Actions.board(pos) },
         { label: 'Стрелка', key: 'A', run: () => Actions.line(pos) },
+        { label: 'Скетч', key: 'D', run: () => Actions.sketch(pos) },
         { label: 'Картинка…', run: () => Actions.pick('image', pos) },
         { label: 'Файл…', run: () => Actions.pick('file', pos) },
         App.clip ? '-' : null,
@@ -699,6 +704,10 @@ const Interact = {
         const v = await promptText('Подпись к картинке', one.caption || '');
         if (v != null) { Store.snapshot(); one.caption = v; Store.markDirty(App.boardId); Render.card(one); }
       } });
+    }
+    if (one?.type === 'sketch') {
+      items.push({ label: 'Рисовать', key: 'Enter', run: () => Sketch.open(one) });
+      items.push({ label: 'Очистить рисунок', disabled: !one.strokes?.length, run: () => { Store.snapshot(); one.strokes = []; Store.markDirty(App.boardId); Render.card(one); } });
     }
     if (one?.type === 'todo') {
       items.push({ label: 'Убрать выполненные', run: () => { Store.snapshot(); one.items = one.items.filter((i) => !i.done); Store.markDirty(App.boardId); Render.card(one); } });

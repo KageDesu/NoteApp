@@ -145,6 +145,10 @@ const Actions = {
     return card;
   },
 
+  sketch(pos) {
+    return this.addCard({ type: 'sketch', x: pos.x, y: pos.y, strokes: [] });
+  },
+
   async board(pos) {
     const title = await promptText('Новая доска', '', 'Название доски');
     if (title == null) return;
@@ -265,7 +269,7 @@ const Actions = {
   copy() {
     if (!App.selected.size) return false;
     const cards = App.board.cards.filter((c) => App.selected.has(c.id));
-    const text = cards.map((c) => c.type === 'note' ? htmlToText(c.html) : c.type === 'link' ? c.url : c.type === 'todo' ? [c.title, ...c.items.map((i) => (i.done ? '[x] ' : '[ ] ') + i.text)].filter(Boolean).join('\n') : c.name || (c.type === 'board' && Store.get(c.boardId)?.title) || '').filter(Boolean).join('\n\n') || '[NoteApp]';
+    const text = cards.map((c) => c.type === 'note' ? htmlToText(c.html) : c.type === 'link' ? c.url : c.type === 'todo' ? [c.title, ...c.items.map((i) => (i.done ? '[x] ' : '[ ] ') + i.text)].filter(Boolean).join('\n') : c.type === 'sketch' ? '[Скетч]' : c.name || (c.type === 'board' && Store.get(c.boardId)?.title) || '').filter(Boolean).join('\n\n') || '[NoteApp]';
     App.clip = { cards: JSON.parse(JSON.stringify(cards)), lines: JSON.parse(JSON.stringify(this.selectedLinesBetween(App.selected))), text };
     navigator.clipboard.writeText(text).catch(() => {});
     return true;
@@ -499,6 +503,7 @@ function cardText(c) {
   if (c.type === 'todo') return [c.title, ...(c.items || []).map((i) => i.text)].join(' ');
   if (c.type === 'link') return [c.title, c.url, c.description].join(' ');
   if (c.type === 'board') return Store.get(c.boardId)?.title || '';
+  if (c.type === 'sketch') return '';
   return [c.name, c.caption].join(' ');
 }
 
@@ -506,7 +511,7 @@ function openSearch() {
   Edit.stop();
   const input = el('input', { class: 'input', placeholder: 'Искать во всех досках…' });
   const list = el('div', { class: 'search-results' });
-  const TYPE = { note: 'Заметка', todo: 'To-do', link: 'Ссылка', board: 'Доска', image: 'Картинка', file: 'Файл' };
+  const TYPE = { note: 'Заметка', todo: 'To-do', link: 'Ссылка', board: 'Доска', image: 'Картинка', file: 'Файл', sketch: 'Скетч' };
   let results = [];
   const run = () => {
     const q = input.value.trim().toLowerCase();
