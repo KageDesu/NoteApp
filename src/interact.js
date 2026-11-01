@@ -17,7 +17,7 @@ const Interact = {
     vp.addEventListener('click', (e) => {
       if (e.target.closest('a')) e.preventDefault(); // ссылки открываем сами
     });
-    vp.addEventListener('keydown', (e) => { if (App.editingId && !Format.key(e)) Edit.todoKey(e); });
+    vp.addEventListener('keydown', (e) => { if (App.editingId && !Format.key(e)) { Edit.todoKey(e); Table.key(e); } });
     vp.addEventListener('input', () => { if (App.editingId) requestAnimationFrame(() => { Render.lines(); Format.position(); }); });
     vp.addEventListener('paste', (e) => this.onEditPaste(e), true);
     vp.addEventListener('focusout', (e) => {
@@ -25,7 +25,9 @@ const Interact = {
       if (!App.editingId) return;
       const card = Render.els.get(App.editingId);
       if (card && !card.contains(e.relatedTarget) && !this.drag) setTimeout(() => {
-        if (App.editingId && !card.contains(document.activeElement)) Edit.stop();
+        // карточка могла перерисоваться (таблица после вставки строки) — берём актуальный элемент
+        const cur = Render.els.get(App.editingId);
+        if (App.editingId && !(cur && cur.contains(document.activeElement))) Edit.stop();
       }, 0);
     });
 
@@ -126,6 +128,22 @@ const Interact = {
         Edit.insertItem(card, card.items.length);
         return;
       }
+      if (role === 'tbl-add-row' || role === 'tbl-add-col') {
+        e.preventDefault();
+        const { rows, cols } = Table.size(card);
+        if (role === 'tbl-add-row') Table.change(card, (k) => Table.insertRow(k, rows), { r: rows, c: 0 });
+        else Table.change(card, (k) => Table.insertCol(k, cols), { r: 0, c: cols });
+        return;
+      }
+      if (role === 'tbl-row' || role === 'tbl-col') {
+        e.preventDefault();
+        const lab = t.closest('[data-role]');
+        const r = lab.getBoundingClientRect();
+        const items = role === 'tbl-row' ? Table.rowItems(card, +lab.dataset.row) : Table.colItems(card, +lab.dataset.col);
+        if (role === 'tbl-row' && +lab.dataset.row === 0) items.push('-', Table.headerItem(card));
+        this.showMenu(role === 'tbl-row' ? r.right + 4 : r.left, role === 'tbl-row' ? r.top : r.bottom + 4, items, true);
+        return;
+      }
 
       e.preventDefault();
       if (App.editingId && App.editingId !== id) Edit.stop();
@@ -195,7 +213,8 @@ const Interact = {
 
     if (d.kind === 'resize') {
       d.moved = true;
-      const w = Math.max(d.card.type === 'image' || d.card.type === 'sketch' ? 90 : 140, Math.min(1400, d.w + (e.clientX - d.sx) / App.view.z));
+      const minW = d.card.type === 'image' || d.card.type === 'sketch' ? 90 : d.card.type === 'table' ? Math.max(140, Table.size(d.card).cols * 48) : 140;
+      const w = Math.max(minW, Math.min(1400, d.w + (e.clientX - d.sx) / App.view.z));
       d.card.w = Math.round(w);
       Render.position(d.card);
       Render.lines();
@@ -293,7 +312,7 @@ const Interact = {
       if (d.role === 'open-link' && card?.url) { window.api.openExternal(card.url); return; }
       if (!d.shift && !d.wasSelected) { App.select([d.id]); return; }
       // Повторный клик по выбранной заметке — начать редактирование
-      if (!d.shift && d.wasSelected && card && ['note', 'todo'].includes(card.type)) {
+      if (!d.shift && d.wasSelected && card && ['note', 'todo', 'table'].includes(card.type)) {
         Edit.start(card.id, { point: d.point, focusItem: e.target.closest?.('.todo-item')?.dataset.item });
       }
       return;
@@ -464,6 +483,7 @@ const Interact = {
       else if (k === 'b') { e.preventDefault(); Actions.board(pos); }
       else if (k === 'a') { e.preventDefault(); Actions.line(pos); }
       else if (k === 'd') { e.preventDefault(); Actions.sketch(pos); }
+      else if (k === 'g') { e.preventDefault(); Actions.table(pos); }
     }
   },
 
@@ -495,6 +515,7 @@ const Interact = {
     if (hasImage && !text) return; // картинку обработает общий обработчик — создаст карточку
     e.preventDefault();
     e.stopPropagation();
+    if (Table.paste(text, e.target)) return; // несколько ячеек из Excel — разложить по таблице
     document.execCommand('insertText', false, text);
   },
 
@@ -527,6 +548,8 @@ const Interact = {
     }
     if (!text.trim()) return;
     if (isUrl(text)) { Actions.link(pos, text.trim()); return; }
+    const tsv = Table.parseTsv(text);
+    if (tsv && tsv.length > 1) { Actions.table(pos, tsv); return; } // ячейки из Excel → таблица
     const html = escapeHtml(text.trim()).replace(/\r?\n/g, '<br>');
     Actions.note(pos, html);
   },
@@ -564,6 +587,7 @@ const Interact = {
         line: () => Actions.line(p),
         board: () => Actions.board(p),
         sketch: () => Actions.sketch(p),
+        table: () => Actions.table(p),
         image: () => Actions.pick('image', p),
         file: () => Actions.pick('file', p),
       })[tool]?.();
@@ -635,6 +659,12 @@ const Interact = {
     if (App.editingId && e.target.closest('.card.editing')) {
       this.hideMenu();
       if (Format.cardId) Format.openMenu({ x: e.clientX, y: e.clientY });
+      const cell = e.target.closest('.tbl-cell');
+      const card = App.cardById(App.editingId);
+      if (cell && card?.type === 'table') {
+        const { r, c } = Table.cellPos(cell);
+        this.showMenu(e.clientX, e.clientY, [...Table.rowItems(card, r), '-', ...Table.colItems(card, c), '-', Table.headerItem(card)], true);
+      }
       return;
     }
     const cardEl = e.target.closest('.card');
@@ -657,6 +687,7 @@ const Interact = {
         { label: 'Доска', key: 'B', run: () => Actions.board(pos) },
         { label: 'Стрелка', key: 'A', run: () => Actions.line(pos) },
         { label: 'Скетч', key: 'D', run: () => Actions.sketch(pos) },
+        { label: 'Таблица', key: 'G', run: () => Actions.table(pos) },
         { label: 'Картинка…', run: () => Actions.pick('image', pos) },
         { label: 'Файл…', run: () => Actions.pick('file', pos) },
         App.clip ? '-' : null,
@@ -682,6 +713,13 @@ const Interact = {
       });
       items.push({ label: cur?.style === 'stripe' ? 'Стиль: залить цветом' : 'Стиль: цветная полоска сверху', run: () => Actions.setNoteColor(null, cur?.style === 'stripe' ? 'fill' : 'stripe') });
       items.push('-');
+    }
+    if (one?.type === 'table') {
+      const { rows, cols } = Table.size(one);
+      items.push({ label: 'Редактировать', key: 'Enter', run: () => Edit.start(one.id) });
+      items.push({ label: 'Добавить строку', run: () => Table.change(one, (k) => Table.insertRow(k, rows)) });
+      items.push({ label: 'Добавить столбец', run: () => Table.change(one, (k) => Table.insertCol(k, cols)) });
+      items.push(Table.headerItem(one));
     }
     if (one?.type === 'note' || one?.type === 'todo') items.push({ label: 'Редактировать', key: 'Enter', run: () => Edit.start(one.id) });
     if (one?.type === 'board') {

@@ -15,7 +15,7 @@ const NOTE_COLORS = {
   dark: { bg: '#33363c', fg: '#f1f2f4' },
 };
 
-const CARD_DEFAULT_W = { note: 280, link: 320, todo: 280, image: 320, file: 240, board: 128, sketch: 360 };
+const CARD_DEFAULT_W = { note: 280, link: 320, todo: 280, image: 320, file: 240, board: 128, sketch: 360, table: 420 };
 
 const Render = {
   els: new Map(), // cardId -> element
@@ -169,6 +169,28 @@ const Render = {
     if (strokes.length) wrap.append(Sketch.svg(strokes));
     else wrap.append(el('div', { class: 'sketch-empty' }, sketchIcon('pen'), el('span', { text: 'Дважды щёлкните, чтобы рисовать' })));
     e.append(wrap);
+  },
+
+  body_table(card, e) {
+    const cells = card.cells || (card.cells = Table.make());
+    const cols = cells[0]?.length || 1;
+    e.style.setProperty('--cols', cols);
+    const title = el('div', { class: 'tbl-title', text: card.title || '' });
+    title.dataset.placeholder = 'Новая таблица';
+    // буквы столбцов (видны при редактировании)
+    const colbar = el('div', { class: 'tbl-colbar' },
+      Array.from({ length: cols }, (_, c) => el('div', { class: 'tbl-label', 'data-role': 'tbl-col', 'data-col': c, tabindex: '-1', text: Table.colName(c) })),
+      el('div', { class: 'tbl-add tbl-add-col', 'data-role': 'tbl-add-col', tabindex: '-1', title: 'Добавить столбец', text: '+' }));
+    const grid = el('div', { class: 'tbl-grid' });
+    cells.forEach((row, r) => {
+      grid.append(el('div', { class: 'tbl-row' + (r === 0 && card.header !== false ? ' head' : ''), 'data-row': r },
+        el('div', { class: 'tbl-label tbl-rowlabel', 'data-role': 'tbl-row', 'data-row': r, tabindex: '-1', text: String(r + 1) }),
+        row.map((v, c) => el('div', { class: 'tbl-cell', 'data-col': c, text: v }))));
+    });
+    grid.append(el('div', { class: 'tbl-add tbl-add-row', 'data-role': 'tbl-add-row', tabindex: '-1', title: 'Добавить строку', text: '+' }));
+    const desc = el('div', { class: 'tbl-desc', text: card.desc || '' });
+    desc.dataset.placeholder = 'Добавьте описание';
+    e.append(colbar, title, grid, desc);
   },
 
   // ---------- выделение ----------

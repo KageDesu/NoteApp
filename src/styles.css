@@ -447,3 +447,61 @@ button { font: inherit; color: inherit; }
 .sk-sizeopt span { flex: 1; border-radius: 99px; }
 .sk-sizeopt:hover { background: #f0f1f3; }
 .sk-sizeopt.on { background: #e3ecfd; }
+
+/* ---------- таблица ---------- */
+.card-table { --tbl-line: #e1e3e7; }
+.card-table.editing { box-shadow: 0 0 0 2px var(--accent), var(--card-shadow-lift); }
+.tbl-title {
+  padding: 18px 18px 14px; text-align: center; font-weight: 700; font-size: 19px; line-height: 1.3;
+  outline: none; min-height: 1.3em; word-wrap: break-word; overflow-wrap: anywhere;
+}
+.tbl-title:empty::before, .tbl-desc:empty::before { content: attr(data-placeholder); color: #c3c6cc; font-weight: inherit; }
+.tbl-grid { position: relative; border-top: 1px solid var(--tbl-line); }
+.tbl-row {
+  position: relative; display: grid; grid-template-columns: repeat(var(--cols), minmax(0, 1fr));
+  border-bottom: 1px solid var(--tbl-line);
+}
+.tbl-row.head { background: #d4d6da; font-weight: 600; }
+.tbl-cell {
+  padding: 8px 10px; min-height: 38px; outline: none; border-right: 1px solid var(--tbl-line);
+  white-space: pre-wrap; word-wrap: break-word; overflow-wrap: anywhere;
+}
+.tbl-row.head .tbl-cell { border-right-color: #c4c7cc; }
+.tbl-cell:last-child { border-right: 0; }
+.tbl-desc {
+  padding: 12px 18px 14px; color: #6d727b; font-size: 13.5px; outline: none;
+  white-space: pre-wrap; word-wrap: break-word; overflow-wrap: anywhere;
+}
+.card-table:not(.editing) .tbl-desc:empty { display: none; }
+.card-table.editing :is(.tbl-title, .tbl-cell, .tbl-desc) { cursor: text; user-select: text; }
+.card-table.editing .tbl-cell:focus { box-shadow: inset 0 0 0 2px var(--accent); }
+
+/* буквы столбцов, номера строк и «+» — только при редактировании */
+.card-table:not(.editing) :is(.tbl-colbar, .tbl-label, .tbl-add) { display: none; }
+.tbl-colbar {
+  position: absolute; left: 0; right: 0; bottom: calc(100% + 10px); height: 36px;
+  display: grid; grid-template-columns: repeat(var(--cols), minmax(0, 1fr));
+  background: #fff; border-radius: 6px; box-shadow: var(--card-shadow);
+}
+.tbl-label {
+  display: grid; place-items: center; font-size: 13px; color: var(--muted); cursor: pointer; outline: none;
+  font-variant-numeric: tabular-nums;
+}
+.tbl-colbar .tbl-label + .tbl-label { border-left: 1px solid #eceef1; }
+.tbl-colbar .tbl-label:first-child { border-radius: 6px 0 0 6px; }
+.tbl-colbar .tbl-label:nth-last-child(2) { border-radius: 0 6px 6px 0; }
+.tbl-label:hover, .tbl-label:focus { background: #eef3fe; color: var(--accent); }
+.tbl-rowlabel {
+  position: absolute; left: -52px; top: -1px; bottom: -1px; width: 40px;
+  background: #fff; box-shadow: var(--card-shadow);
+}
+.tbl-row:first-child .tbl-rowlabel { border-radius: 6px 6px 0 0; }
+.tbl-row:nth-last-child(2) .tbl-rowlabel { border-radius: 0 0 6px 6px; }
+.tbl-add {
+  position: absolute; width: 28px; height: 28px; border-radius: 50%;
+  display: grid; place-items: center; font-size: 18px; line-height: 1; color: var(--muted);
+  background: #fff; box-shadow: var(--card-shadow); cursor: pointer; outline: none;
+}
+.tbl-add:hover { background: var(--accent); color: #fff; }
+.tbl-add-col { right: -40px; top: 4px; }
+.tbl-add-row { left: -46px; top: calc(100% + 8px); }

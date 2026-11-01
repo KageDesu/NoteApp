@@ -2,7 +2,7 @@
 //
 // Формат доски:
 // { id, title, parentId, color, icon, view:{x,y,z}, cards:[...], lines:[...] }
-// Карточка: { id, type: 'note'|'board'|'link'|'todo'|'sketch'|'image'|'file', x, y, w, ...поля типа }
+// Карточка: { id, type: 'note'|'board'|'link'|'todo'|'sketch'|'table'|'image'|'file', x, y, w, ...поля типа }
 // Линия:    { id, from: {card} | {x,y}, to: {card} | {x,y}, arrow: true }
 
 const HOME_ID = 'home';

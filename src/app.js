@@ -149,6 +149,14 @@ const Actions = {
     return this.addCard({ type: 'sketch', x: pos.x, y: pos.y, strokes: [] });
   },
 
+  // Новая таблица; cells — готовые данные (например, вставленные из Excel)
+  table(pos, cells) {
+    const w = cells ? Math.min(1000, Math.max(CARD_DEFAULT_W.table, cells[0].length * 120)) : CARD_DEFAULT_W.table;
+    const card = this.addCard({ type: 'table', x: pos.x, y: pos.y, w, title: '', desc: '', header: true, cells: cells || Table.make(4, 3) });
+    if (!cells) Edit.start(card.id, { isNew: true });
+    return card;
+  },
+
   async board(pos) {
     const title = await promptText('Новая доска', '', 'Название доски');
     if (title == null) return;
@@ -269,7 +277,7 @@ const Actions = {
   copy() {
     if (!App.selected.size) return false;
     const cards = App.board.cards.filter((c) => App.selected.has(c.id));
-    const text = cards.map((c) => c.type === 'note' ? htmlToText(c.html) : c.type === 'link' ? c.url : c.type === 'todo' ? [c.title, ...c.items.map((i) => (i.done ? '[x] ' : '[ ] ') + i.text)].filter(Boolean).join('\n') : c.type === 'sketch' ? '[Скетч]' : c.name || (c.type === 'board' && Store.get(c.boardId)?.title) || '').filter(Boolean).join('\n\n') || '[NoteApp]';
+    const text = cards.map((c) => c.type === 'note' ? htmlToText(c.html) : c.type === 'link' ? c.url : c.type === 'todo' ? [c.title, ...c.items.map((i) => (i.done ? '[x] ' : '[ ] ') + i.text)].filter(Boolean).join('\n') : c.type === 'sketch' ? '[Скетч]' : c.type === 'table' ? Table.toText(c) : c.name || (c.type === 'board' && Store.get(c.boardId)?.title) || '').filter(Boolean).join('\n\n') || '[NoteApp]';
     App.clip = { cards: JSON.parse(JSON.stringify(cards)), lines: JSON.parse(JSON.stringify(this.selectedLinesBetween(App.selected))), text };
     navigator.clipboard.writeText(text).catch(() => {});
     return true;
@@ -385,12 +393,12 @@ const Actions = {
 
 // ---------- Редактирование текста в карточках ----------
 const Edit = {
-  start(id, { isNew = false, focusItem = null, point = null } = {}) {
+  start(id, { isNew = false, focusItem = null, point = null, focusCell = null } = {}) {
     if (App.editingId === id) return;
     this.stop();
     const card = App.cardById(id);
     const e = Render.els.get(id);
-    if (!card || !e || !['note', 'todo'].includes(card.type)) return;
+    if (!card || !e || !['note', 'todo', 'table'].includes(card.type)) return;
     if (!isNew) Store.snapshot(); // для новой карточки снимок уже сделан при создании
     App.editingId = id;
     App.select([id]);
@@ -400,11 +408,15 @@ const Edit = {
       target = $('.note-content', e);
       target.contentEditable = 'true';
       Format.show(id);
+    } else if (card.type === 'table') {
+      Table.enable(e);
+      target = Table.startTarget(card, e, { isNew, point, focusCell });
     } else {
       for (const t of $$('.todo-title, .todo-text', e)) t.contentEditable = 'plaintext-only';
       target = focusItem ? $(`[data-item="${focusItem}"] .todo-text`, e) : $('.todo-title', e);
     }
     Render.selection();
+    if (card.type === 'table') Render.lines(); // в режиме редактирования появляется описание — размер меняется
     target.focus();
     const sel = window.getSelection();
     const r = point && document.caretRangeFromPoint(point.x, point.y);
@@ -429,6 +441,8 @@ const Edit = {
         const t = $(`[data-item="${it.id}"] .todo-text`, e);
         if (t) it.text = t.textContent;
       }
+    } else if (card.type === 'table') {
+      Table.read(card, e);
     }
     return card;
   },
@@ -440,7 +454,8 @@ const Edit = {
     Format.hide();
     if (card) {
       if (card.type === 'todo') card.items = card.items.filter((i) => i.text.trim());
-      const empty = card.type === 'note' ? !htmlToText(card.html) && !/<(li|br)/i.test(card.html) : !card.title && !card.items.length;
+      // пустую таблицу не удаляем: сетка сама по себе уже содержимое
+      const empty = card.type === 'table' ? false : card.type === 'note' ? !htmlToText(card.html) && !/<(li|br)/i.test(card.html) : !card.title && !card.items.length;
       if (empty && this.isNew) {
         App.board.cards = App.board.cards.filter((c) => c.id !== card.id);
         App.selected.delete(card.id);
@@ -504,6 +519,7 @@ function cardText(c) {
   if (c.type === 'link') return [c.title, c.url, c.description].join(' ');
   if (c.type === 'board') return Store.get(c.boardId)?.title || '';
   if (c.type === 'sketch') return '';
+  if (c.type === 'table') return Table.searchText(c);
   return [c.name, c.caption].join(' ');
 }
 
@@ -511,7 +527,7 @@ function openSearch() {
   Edit.stop();
   const input = el('input', { class: 'input', placeholder: 'Искать во всех досках…' });
   const list = el('div', { class: 'search-results' });
-  const TYPE = { note: 'Заметка', todo: 'To-do', link: 'Ссылка', board: 'Доска', image: 'Картинка', file: 'Файл', sketch: 'Скетч' };
+  const TYPE = { note: 'Заметка', todo: 'To-do', link: 'Ссылка', board: 'Доска', image: 'Картинка', file: 'Файл', sketch: 'Скетч', table: 'Таблица' };
   let results = [];
   const run = () => {
     const q = input.value.trim().toLowerCase();
