@@ -266,6 +266,31 @@ ipcMain.handle('link:preview', async (_e, url) => {
 });
 
 // ---------- Окно ----------
+// Что Windows запомнит при «Закрепить на панели задач»: иконку и команду запуска.
+// Без этого закрепляется electron.exe (при запуске через start.bat) или временная
+// копия из %TEMP% (portable-сборка распаковывается туда при каждом запуске).
+function setTaskbarDetails() {
+  if (process.platform !== 'win32') return;
+  const q = (s) => `"${s}"`;
+  let exe, args, iconPath;
+  if (app.isPackaged) {
+    exe = process.env.PORTABLE_EXECUTABLE_FILE || process.execPath;
+    args = '';
+    iconPath = exe; // иконка вшита в сам exe
+  } else {
+    exe = process.execPath;
+    args = ' ' + q(app.getAppPath());
+    iconPath = path.join(__dirname, 'assets', 'icon.ico');
+  }
+  win.setAppDetails({
+    appId: 'local.noteapp',
+    appIconPath: iconPath,
+    appIconIndex: 0,
+    relaunchCommand: q(exe) + args,
+    relaunchDisplayName: 'NoteApp',
+  });
+}
+
 let win;
 let readyToClose = false;
 
@@ -277,6 +302,7 @@ function createWindow() {
     minHeight: 500,
     backgroundColor: '#ecedef',
     title: 'NoteApp',
+    icon: path.join(__dirname, 'assets', process.platform === 'win32' ? 'icon.ico' : 'icon.png'),
     autoHideMenuBar: true,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
@@ -285,6 +311,7 @@ function createWindow() {
       spellcheck: true,
     },
   });
+  setTaskbarDetails();
   win.webContents.session.setSpellCheckerLanguages(['ru', 'en-US']);
   win.loadFile(path.join(__dirname, 'src', 'index.html'));
 
@@ -310,6 +337,9 @@ ipcMain.on('app:ready-to-close', () => {
   readyToClose = true;
   if (win) win.close();
 });
+
+// Свой AppUserModelID, чтобы Windows группировала окно на панели задач под иконкой NoteApp, а не Electron
+if (process.platform === 'win32') app.setAppUserModelId('local.noteapp');
 
 app.whenReady().then(async () => {
   if (startupError) {

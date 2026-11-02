@@ -10,12 +10,14 @@
   },
   "devDependencies": {
     "electron": "33.4.11",
-    "electron-builder": "25.1.8"
+    "electron-builder": "25.1.8",
+    "rcedit": "4.0.1"
   },
   "build": {
     "appId": "local.noteapp",
     "productName": "NoteApp",
-    "files": ["main.js", "preload.js", "src/**/*"],
-    "win": { "target": "portable" }
+    "files": ["main.js", "preload.js", "src/**/*", "assets/icon.ico", "assets/icon.png"],
+    "afterPack": "scripts/afterPack.js",
+    "win": { "target": "portable", "icon": "assets/icon.ico", "signAndEditExecutable": false }
   }
 }
