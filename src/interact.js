@@ -17,7 +17,7 @@ const Interact = {
     vp.addEventListener('click', (e) => {
       if (e.target.closest('a')) e.preventDefault(); // ссылки открываем сами
     });
-    vp.addEventListener('keydown', (e) => { if (App.editingId && !Format.key(e)) { Edit.todoKey(e); Table.key(e); } });
+    vp.addEventListener('keydown', (e) => { if (App.editingId && !Format.key(e)) { Edit.todoKey(e); Edit.columnKey(e); Table.key(e); } });
     vp.addEventListener('input', () => { if (App.editingId) requestAnimationFrame(() => { Render.lines(); Format.position(); }); });
     vp.addEventListener('paste', (e) => this.onEditPaste(e), true);
     vp.addEventListener('focusout', (e) => {
@@ -156,8 +156,10 @@ const Interact = {
         App.select([id]);
       }
       const start = App.screenToWorld(e.clientX, e.clientY);
-      const items = App.board.cards.filter((c) => App.selected.has(c.id)).map((c) => ({ c, x: c.x, y: c.y }));
-      this.drag = { kind: 'move', id, items, start, sx: e.clientX, sy: e.clientY, moved: false, wasSelected, role, point: { x: e.clientX, y: e.clientY }, shift: e.shiftKey || e.ctrlKey };
+      // карточки внутри выбранной колонки едут вместе с ней, отдельно их не двигаем
+      const items = App.board.cards.filter((c) => App.selected.has(c.id) && !(c.col && App.selected.has(c.col))).map((c) => ({ c, x: c.x, y: c.y }));
+      const onHead = card.type === 'column' && t.closest('.card') === cardEl && !!t.closest('.col-head');
+      this.drag = { kind: 'move', id, items, start, sx: e.clientX, sy: e.clientY, moved: false, wasSelected, role, onHead, point: { x: e.clientX, y: e.clientY }, shift: e.shiftKey || e.ctrlKey };
       return;
     }
 
@@ -190,6 +192,7 @@ const Interact = {
       if (!d.moved) {
         d.moved = true;
         Store.snapshot();
+        this.detachFromColumns(d);
         $('#viewport').classList.add('dragging');
         for (const it of d.items) Render.els.get(it.c.id)?.classList.add('lifting');
       }
@@ -207,13 +210,15 @@ const Interact = {
         if (target) Render.els.get(target.id)?.classList.add('drop-target');
         $('#viewport').classList.toggle('over-board', !!target);
       }
+      // ...или колонка, в которую можно положить карточки (сами колонки не вкладываются)
+      this.updateColumnTarget(d, target ? null : e);
       Render.lines();
       return;
     }
 
     if (d.kind === 'resize') {
       d.moved = true;
-      const minW = d.card.type === 'image' || d.card.type === 'sketch' ? 90 : d.card.type === 'table' ? Math.max(140, Table.size(d.card).cols * 48) : 140;
+      const minW = d.card.type === 'image' || d.card.type === 'sketch' ? 90 : d.card.type === 'table' ? Math.max(140, Table.size(d.card).cols * 48) : d.card.type === 'column' ? 200 : 140;
       const w = Math.max(minW, Math.min(1400, d.w + (e.clientX - d.sx) / App.view.z));
       d.card.w = Math.round(w);
       Render.position(d.card);
@@ -289,7 +294,8 @@ const Interact = {
     if (!d) return;
     this.drag = null;
     $('#viewport').classList.remove('panning', 'dragging', 'over-board');
-    $$('.card.lifting, .card.connect-target, .card.drop-target').forEach((x) => x.classList.remove('lifting', 'connect-target', 'drop-target'));
+    $$('.card.lifting, .card.connect-target, .card.drop-target, .card.col-target').forEach((x) => x.classList.remove('lifting', 'connect-target', 'drop-target', 'col-target'));
+    $$('.col-marker').forEach((x) => x.remove());
 
     if (d.kind === 'pan') {
       if (d.button === 2) {
@@ -302,6 +308,8 @@ const Interact = {
       if (d.moved) {
         if (d.dropTarget) {
           Actions.moveToBoard(new Set(App.selected), d.dropTarget.boardId);
+        } else if (d.colTarget) {
+          Actions.insertIntoColumn(new Set(d.items.map((it) => it.c.id)), d.colTarget.id, d.colBefore);
         } else {
           Store.markDirty(App.boardId);
         }
@@ -311,8 +319,8 @@ const Interact = {
       // Клик без перетаскивания
       if (d.role === 'open-link' && card?.url) { window.api.openExternal(card.url); return; }
       if (!d.shift && !d.wasSelected) { App.select([d.id]); return; }
-      // Повторный клик по выбранной заметке — начать редактирование
-      if (!d.shift && d.wasSelected && card && ['note', 'todo', 'table'].includes(card.type)) {
+      // Повторный клик по выбранной заметке (или по заголовку колонки) — начать редактирование
+      if (!d.shift && d.wasSelected && card && (['note', 'todo', 'table'].includes(card.type) || (card.type === 'column' && d.onHead))) {
         Edit.start(card.id, { point: d.point, focusItem: e.target.closest?.('.todo-item')?.dataset.item });
       }
       return;
@@ -360,14 +368,61 @@ const Interact = {
 
   cardAt(clientX, clientY, exclude = new Set()) {
     const p = App.screenToWorld(clientX, clientY);
-    const cards = App.board.cards;
+    // карточки внутри колонок лежат поверх колонки — проверяем их первыми
+    const cards = [...App.board.cards.filter((c) => !c.col), ...App.board.cards.filter((c) => c.col)];
     for (let i = cards.length - 1; i >= 0; i--) {
       const c = cards[i];
-      if (exclude.has(c.id)) continue;
+      if (exclude.has(c.id) || (c.col && exclude.has(c.col))) continue;
       const r = Render.cardRect(c.id);
       if (r && p.x >= r.x && p.x <= r.x + r.w && p.y >= r.y && p.y <= r.y + r.h) return c;
     }
     return null;
+  },
+
+  // Начали тащить карточки, лежащие в колонке: вынуть их на холст на том же месте
+  detachFromColumns(d) {
+    const out = d.items.filter((it) => it.c.col);
+    if (!out.length) return;
+    for (const it of out) {
+      const r = Render.cardRect(it.c.id);
+      if (!r) continue;
+      it.x = it.c.x = Math.round(r.x);
+      it.y = it.c.y = Math.round(r.y);
+      it.c.w = Math.round(r.w);
+    }
+    for (const it of out) delete it.c.col;
+    Render.sync();
+  },
+
+  // Колонка под курсором и место вставки в ней; e = null — убрать подсветку
+  updateColumnTarget(d, e) {
+    let col = null, before = null;
+    if (e && !d.items.some((it) => it.c.type === 'column')) {
+      const p = App.screenToWorld(e.clientX, e.clientY);
+      const moving = new Set(d.items.map((it) => it.c.id));
+      const cards = App.board.cards;
+      for (let i = cards.length - 1; i >= 0 && !col; i--) {
+        const c = cards[i];
+        if (c.type !== 'column' || moving.has(c.id)) continue;
+        const r = Render.cardRect(c.id);
+        if (r && p.x >= r.x && p.x <= r.x + r.w && p.y >= r.y && p.y <= r.y + r.h) col = c;
+      }
+      if (col) for (const c of cards) {
+        if (c.col !== col.id || moving.has(c.id)) continue;
+        const r = Render.cardRect(c.id);
+        if (r && p.y < r.y + r.h / 2) { before = c.id; break; }
+      }
+    }
+    if (d.colTarget === col && d.colBefore === before) return;
+    if (d.colTarget) Render.els.get(d.colTarget.id)?.classList.remove('col-target');
+    $$('.col-marker').forEach((x) => x.remove());
+    d.colTarget = col;
+    d.colBefore = before;
+    if (!col) return;
+    const ce = Render.els.get(col.id);
+    ce.classList.add('col-target');
+    const list = $('.col-list', ce);
+    list.insertBefore(el('div', { class: 'col-marker' }), before ? Render.els.get(before) : null);
   },
 
   boardCardAt(clientX, clientY, exclude) {
@@ -484,6 +539,7 @@ const Interact = {
       else if (k === 'a') { e.preventDefault(); Actions.line(pos); }
       else if (k === 'd') { e.preventDefault(); Actions.sketch(pos); }
       else if (k === 'g') { e.preventDefault(); Actions.table(pos); }
+      else if (k === 'c') { e.preventDefault(); Actions.column(pos); }
     }
   },
 
@@ -588,6 +644,7 @@ const Interact = {
         board: () => Actions.board(p),
         sketch: () => Actions.sketch(p),
         table: () => Actions.table(p),
+        column: () => Actions.column(p),
         image: () => Actions.pick('image', p),
         file: () => Actions.pick('file', p),
       })[tool]?.();
@@ -688,6 +745,7 @@ const Interact = {
         { label: 'Стрелка', key: 'A', run: () => Actions.line(pos) },
         { label: 'Скетч', key: 'D', run: () => Actions.sketch(pos) },
         { label: 'Таблица', key: 'G', run: () => Actions.table(pos) },
+        { label: 'Колонка', key: 'C', run: () => Actions.column(pos) },
         { label: 'Картинка…', run: () => Actions.pick('image', pos) },
         { label: 'Файл…', run: () => Actions.pick('file', pos) },
         App.clip ? '-' : null,
@@ -702,8 +760,8 @@ const Interact = {
     const cards = App.board.cards.filter((c) => App.selected.has(c.id));
     const one = cards.length === 1 ? cards[0] : null;
     const items = [];
-    if (cards.some((c) => c.type === 'note')) {
-      const cur = one?.type === 'note' ? one : null;
+    if (cards.some((c) => c.type === 'note' || c.type === 'column')) {
+      const cur = one?.type === 'note' || one?.type === 'column' ? one : null;
       items.push({
         custom: () => el('div', { class: 'menu-colors' },
           Object.entries(NOTE_COLORS).map(([k, v]) => el('button', {
@@ -722,6 +780,8 @@ const Interact = {
       items.push(Table.headerItem(one));
     }
     if (one?.type === 'note' || one?.type === 'todo') items.push({ label: 'Редактировать', key: 'Enter', run: () => Edit.start(one.id) });
+    if (one?.type === 'column') items.push({ label: 'Изменить заголовок', key: 'Enter', run: () => Edit.start(one.id) });
+    if (cards.some((c) => c.col)) items.push({ label: 'Вынуть из колонки', run: () => Actions.takeOutOfColumn(new Set(cards.filter((c) => c.col).map((c) => c.id))) });
     if (one?.type === 'board') {
       items.push({ label: 'Открыть', key: 'Enter', run: () => App.open(one.boardId) });
       items.push({ label: 'Название, цвет, значок…', run: () => Actions.editBoard(one.boardId) });
@@ -754,8 +814,8 @@ const Interact = {
     items.push(
       { label: 'Копировать', key: 'Ctrl+C', run: () => Actions.copy() },
       { label: 'Дублировать', key: 'Ctrl+D', run: () => Actions.duplicate() },
-      { label: 'На передний план', run: () => Actions.order(true) },
-      { label: 'На задний план', run: () => Actions.order(false) },
+      cards.every((c) => c.col) ? null : { label: 'На передний план', run: () => Actions.order(true) },
+      cards.every((c) => c.col) ? null : { label: 'На задний план', run: () => Actions.order(false) },
       '-',
       { label: cards.length > 1 ? `Удалить (${cards.length})` : 'Удалить', key: 'Del', danger: true, run: () => Actions.deleteSelection() },
     );

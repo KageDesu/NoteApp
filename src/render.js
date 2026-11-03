@@ -15,7 +15,7 @@ const NOTE_COLORS = {
   dark: { bg: '#33363c', fg: '#f1f2f4' },
 };
 
-const CARD_DEFAULT_W = { note: 280, link: 320, todo: 280, image: 320, file: 240, board: 128, sketch: 360, table: 420 };
+const CARD_DEFAULT_W = { note: 280, link: 320, todo: 280, image: 320, file: 240, board: 128, sketch: 360, table: 420, column: 300 };
 
 const Render = {
   els: new Map(), // cardId -> element
@@ -25,7 +25,8 @@ const Render = {
     cardsLayer.innerHTML = '';
     this.els.clear();
     const b = App.board;
-    for (const c of b.cards) cardsLayer.append(this.createCardEl(c));
+    for (const c of b.cards) this.createCardEl(c);
+    this.place();
     this.lines();
     this.selection();
     $('#empty-hint').hidden = b.cards.length > 0 || b.lines.length > 0;
@@ -36,6 +37,8 @@ const Render = {
     const old = this.els.get(card.id);
     const fresh = this.createCardEl(card);
     if (old) old.replaceWith(fresh); else $('#cards').append(fresh);
+    if (card.type === 'column') this.place(); // вернуть карточки внутрь новой колонки
+    else if (card.col) this.columnMeta(card.col);
     this.selection();
     this.lines();
   },
@@ -43,23 +46,60 @@ const Render = {
   // Синхронизировать порядок/наличие карточек с моделью (после удаления, вставки, смены порядка)
   sync() {
     const b = App.board;
-    const layer = $('#cards');
     const ids = new Set(b.cards.map((c) => c.id));
     for (const [id, e] of this.els) if (!ids.has(id)) { e.remove(); this.els.delete(id); }
-    for (const c of b.cards) {
-      let e = this.els.get(c.id);
-      if (!e) e = this.createCardEl(c);
-      layer.append(e); // append переставляет существующий узел — так поддерживаем z-порядок
-      this.position(c);
-    }
+    for (const c of b.cards) if (!this.els.has(c.id)) this.createCardEl(c);
+    this.place();
     this.lines();
     this.selection();
     $('#empty-hint').hidden = b.cards.length > 0 || b.lines.length > 0;
   },
 
+  // Разложить элементы карточек: свободные — на холст, карточки колонок — внутрь колонок.
+  // append переставляет существующий узел, поэтому порядок в b.cards задаёт и z-порядок,
+  // и порядок карточек внутри колонки.
+  place() {
+    const layer = $('#cards');
+    const cards = App.board.cards;
+    const lists = new Map();
+    for (const c of cards) if (c.type === 'column') {
+      const e = this.els.get(c.id);
+      if (e) { this.position(c); lists.set(c.id, $('.col-list', e)); }
+    }
+    for (const c of cards) {
+      if (c.type === 'column') continue;
+      const e = this.els.get(c.id);
+      if (!e) continue;
+      const list = c.col && lists.get(c.col);
+      if (!list) delete c.col; // колонки больше нет — карточка остаётся на холсте
+      if (list) list.append(e);
+      this.position(c);
+    }
+    // колонки должны оставаться в своём z-порядке относительно свободных карточек
+    for (const c of cards) if (!c.col) { const e = this.els.get(c.id); if (e) layer.append(e); }
+    for (const id of lists.keys()) this.columnMeta(id);
+  },
+
+  // Подпись под заголовком колонки: «1 доска, 2 карточки»
+  columnMeta(colId) {
+    const e = this.els.get(colId);
+    if (!e) return;
+    let boards = 0, cards = 0;
+    for (const c of App.board.cards) if (c.col === colId) (c.type === 'board' ? boards++ : cards++);
+    const parts = [];
+    if (boards) parts.push(boards + ' ' + plural(boards, 'доска', 'доски', 'досок'));
+    if (cards || !boards) parts.push(cards + ' ' + plural(cards, 'карточка', 'карточки', 'карточек'));
+    $('.col-meta', e).textContent = parts.join(', ');
+    e.classList.toggle('empty', !boards && !cards);
+  },
+
   position(card) {
     const e = this.els.get(card.id);
     if (!e) return;
+    if (card.col) { // внутри колонки положение и ширину задаёт сама колонка
+      e.style.left = e.style.top = e.style.width = '';
+      return;
+    }
     e.style.left = card.x + 'px';
     e.style.top = card.y + 'px';
     if (card.type !== 'board') e.style.width = (card.w || CARD_DEFAULT_W[card.type]) + 'px';
@@ -77,6 +117,25 @@ const Render = {
   },
 
   // ---------- типы карточек ----------
+  body_column(card, e) {
+    const col = NOTE_COLORS[card.color] || NOTE_COLORS.none;
+    if (card.style === 'stripe') {
+      e.style.setProperty('--stripe', col.bg);
+      e.classList.add('stripe');
+    } else {
+      e.style.background = col.bg;
+      e.style.setProperty('--col-fg', col.fg);
+    }
+    if (card.color && card.color !== 'none') e.classList.add('colored');
+    const title = el('div', { class: 'col-title', 'data-field': 'title', text: card.title || '' });
+    title.dataset.placeholder = 'Колонка';
+    e.append(
+      el('div', { class: 'col-head' }, title, el('div', { class: 'col-meta' })),
+      el('div', { class: 'col-list' }),
+      el('div', { class: 'col-empty', text: 'Перетащите сюда карточки' }),
+    );
+  },
+
   body_note(card, e) {
     const col = NOTE_COLORS[card.color] || NOTE_COLORS.none;
     if (card.style === 'stripe') {
@@ -206,6 +265,12 @@ const Render = {
     const c = App.cardById(id);
     const e = this.els.get(id);
     if (!c || !e) return null;
+    if (c.col) { // карточка в колонке: позиция = колонка + смещение внутри неё
+      const p = this.cardRect(c.col);
+      const pe = this.els.get(c.col);
+      if (!p || !pe) return null;
+      return { x: p.x + pe.clientLeft + e.offsetLeft, y: p.y + pe.clientTop + e.offsetTop, w: e.offsetWidth, h: e.offsetHeight };
+    }
     return { x: c.x, y: c.y, w: e.offsetWidth, h: e.offsetHeight };
   },
 
@@ -236,6 +301,9 @@ const Render = {
     const hg = $('#lines-handles');
     g.innerHTML = '';
     hg.innerHTML = '';
+    // стрелки к карточкам внутри колонок рисуем поверх карточек, иначе их закроет фон колонки
+    const og = document.createDocumentFragment(); // такие стрелки пойдут перед кружками-ручками
+    const inCol = (end) => end.card && App.cardById(end.card)?.col;
     for (const line of App.board.lines) {
       const p = this.endpoints(line);
       if (!p) continue;
@@ -249,12 +317,13 @@ const Render = {
         'marker-start': line.arrowStart ? (sel ? 'url(#arrow-head-sel)' : 'url(#arrow-head)') : null,
         'stroke-dasharray': line.dashed ? '8 6' : null,
       }));
-      g.append(grp);
+      if (inCol(line.from) || inCol(line.to)) { grp.classList.add('over'); og.append(grp); } else g.append(grp);
       if (sel && App.selectedLines.size === 1) {
         hg.append(svgEl('circle', { cx: p.a.x, cy: p.a.y, r: 6, class: 'line-end', 'data-line': line.id, 'data-end': 'from' }));
         hg.append(svgEl('circle', { cx: p.b.x, cy: p.b.y, r: 6, class: 'line-end', 'data-line': line.id, 'data-end': 'to' }));
       }
     }
+    hg.prepend(...og.childNodes);
     // Временная стрелка, пока пользователь тянет соединение
     if (App.tempLine) {
       const t = App.tempLine;
@@ -264,8 +333,18 @@ const Render = {
         const tp = target ? { x: target.x + target.w / 2, y: target.y + target.h / 2 } : t.to;
         const a = this.edgePoint(ra, tp.x, tp.y);
         const b = target ? this.edgePoint(target, a.x, a.y) : tp;
-        g.append(svgEl('path', { d: `M${a.x},${a.y} L${b.x},${b.y}`, class: 'line-path temp', 'marker-end': 'url(#arrow-head-sel)' }));
+        (App.cardById(t.from)?.col || (t.toCard && App.cardById(t.toCard)?.col) ? hg : g)
+          .append(svgEl('path', { d: `M${a.x},${a.y} L${b.x},${b.y}`, class: 'line-path temp', 'marker-end': 'url(#arrow-head-sel)' }));
       }
+    }
+  },
+
+  // Обновить x/y карточек в колонках по их фактическому положению на экране —
+  // нужно перед копированием/переносом, чтобы карточка без своей колонки встала на то же место
+  syncChildPos() {
+    for (const c of App.board.cards) if (c.col) {
+      const r = this.cardRect(c.id);
+      if (r) { c.x = Math.round(r.x); c.y = Math.round(r.y); c.w = Math.round(r.w); }
     }
   },
 };

@@ -12,6 +12,12 @@ const App = {
 
   get board() { return Store.get(this.boardId); },
   cardById(id) { return this.board.cards.find((c) => c.id === id); },
+  // Набор id вместе с карточками, лежащими внутри выбранных колонок
+  withChildren(ids) {
+    const s = new Set(ids);
+    for (const c of this.board.cards) if (c.col && s.has(c.col)) s.add(c.id);
+    return s;
+  },
 
   // ---------- навигация ----------
   open(id, focusCardId) {
@@ -145,6 +151,56 @@ const Actions = {
     return card;
   },
 
+  column(pos) {
+    const card = this.addCard({ type: 'column', x: pos.x, y: pos.y, title: '', color: 'none', style: 'fill' });
+    Edit.start(card.id, { isNew: true });
+    return card;
+  },
+
+  // Положить карточки в колонку перед карточкой beforeId (или в конец колонки).
+  // Снимок для отмены делает вызывающий код.
+  insertIntoColumn(ids, colId, beforeId = null) {
+    const b = App.board;
+    const col = b.cards.find((c) => c.id === colId && c.type === 'column');
+    if (!col) return;
+    const moving = b.cards.filter((c) => ids.has(c.id) && c.type !== 'column' && c.id !== colId);
+    if (!moving.length) return;
+    // в колонке — в том порядке, как карточки стояли на экране сверху вниз
+    moving.sort((a, c) => a.y - c.y || a.x - c.x);
+    const mv = new Set(moving.map((c) => c.id));
+    b.cards = b.cards.filter((c) => !mv.has(c.id));
+    for (const c of moving) c.col = colId;
+    let idx = beforeId ? b.cards.findIndex((c) => c.id === beforeId) : -1;
+    if (idx < 0) {
+      // после последней карточки колонки, а если она пуста — сразу после самой колонки
+      idx = b.cards.findIndex((c) => c.id === colId) + 1;
+      b.cards.forEach((c, i) => { if (c.col === colId) idx = i + 1; });
+    }
+    b.cards.splice(idx, 0, ...moving);
+    Store.markDirty(App.boardId);
+    Render.sync();
+    App.select(moving.map((c) => c.id));
+  },
+
+  // Вынуть карточки из колонки и положить на холст справа от неё
+  takeOutOfColumn(ids) {
+    const b = App.board;
+    Render.syncChildPos();
+    Store.snapshot();
+    const out = b.cards.filter((c) => ids.has(c.id) && c.col);
+    for (const c of out) {
+      const r = Render.cardRect(c.col);
+      if (r) c.x = Math.round(r.x + r.w + 40);
+      delete c.col;
+      c.w = CARD_DEFAULT_W[c.type] || c.w;
+    }
+    // наверх по z-порядку, чтобы не оказались под другими карточками
+    b.cards = [...b.cards.filter((c) => !out.includes(c)), ...out];
+    Store.markDirty(App.boardId);
+    Render.sync();
+    App.select(out.map((c) => c.id));
+  },
+
   sketch(pos) {
     return this.addCard({ type: 'sketch', x: pos.x, y: pos.y, strokes: [] });
   },
@@ -226,7 +282,7 @@ const Actions = {
     const b = App.board;
     if (!App.selected.size && !App.selectedLines.size) return;
     Store.snapshot();
-    const ids = App.selected;
+    const ids = App.withChildren(App.selected); // колонка удаляется вместе с содержимым
     b.cards = b.cards.filter((c) => !ids.has(c.id));
     b.lines = b.lines.filter((l) => !App.selectedLines.has(l.id) && !ids.has(l.from.card) && !ids.has(l.to.card));
     App.selected = new Set();
@@ -239,6 +295,7 @@ const Actions = {
   cloneInto(board, cards, lines, dx, dy) {
     const map = {};
     const newIds = [];
+    const copies = [];
     for (const c of cards) {
       const n = JSON.parse(JSON.stringify(c));
       n.id = uid();
@@ -248,7 +305,10 @@ const Actions = {
       map[c.id] = n.id;
       board.cards.push(n);
       newIds.push(n.id);
+      copies.push(n);
     }
+    // карточки колонок — в копию колонки; если колонку не копировали, карточка становится свободной
+    for (const n of copies) if (n.col) { if (map[n.col]) n.col = map[n.col]; else delete n.col; }
     for (const l of lines) {
       if ((l.from.card && !map[l.from.card]) || (l.to.card && !map[l.to.card])) continue;
       const n = JSON.parse(JSON.stringify(l));
@@ -266,19 +326,24 @@ const Actions = {
 
   duplicate() {
     if (!App.selected.size) return;
+    Render.syncChildPos();
     Store.snapshot();
-    const cards = App.board.cards.filter((c) => App.selected.has(c.id));
-    const ids = this.cloneInto(App.board, cards, this.selectedLinesBetween(App.selected), 30, 30);
+    const sel = App.withChildren(App.selected);
+    const cards = App.board.cards.filter((c) => sel.has(c.id));
+    const ids = this.cloneInto(App.board, cards, this.selectedLinesBetween(sel), 30, 30);
     Store.markDirty(App.boardId);
     Render.sync();
-    App.select(ids);
+    const fresh = new Set(ids);
+    App.select(ids.filter((id) => !fresh.has(App.cardById(id)?.col))); // выделить колонку, а не её содержимое
   },
 
   copy() {
     if (!App.selected.size) return false;
-    const cards = App.board.cards.filter((c) => App.selected.has(c.id));
-    const text = cards.map((c) => c.type === 'note' ? htmlToText(c.html) : c.type === 'link' ? c.url : c.type === 'todo' ? [c.title, ...c.items.map((i) => (i.done ? '[x] ' : '[ ] ') + i.text)].filter(Boolean).join('\n') : c.type === 'sketch' ? '[Скетч]' : c.type === 'table' ? Table.toText(c) : c.name || (c.type === 'board' && Store.get(c.boardId)?.title) || '').filter(Boolean).join('\n\n') || '[NoteApp]';
-    App.clip = { cards: JSON.parse(JSON.stringify(cards)), lines: JSON.parse(JSON.stringify(this.selectedLinesBetween(App.selected))), text };
+    Render.syncChildPos();
+    const sel = App.withChildren(App.selected);
+    const cards = App.board.cards.filter((c) => sel.has(c.id));
+    const text = cards.map((c) => c.type === 'column' ? c.title : c.type === 'note' ? htmlToText(c.html) : c.type === 'link' ? c.url : c.type === 'todo' ? [c.title, ...c.items.map((i) => (i.done ? '[x] ' : '[ ] ') + i.text)].filter(Boolean).join('\n') : c.type === 'sketch' ? '[Скетч]' : c.type === 'table' ? Table.toText(c) : c.name || (c.type === 'board' && Store.get(c.boardId)?.title) || '').filter(Boolean).join('\n\n') || '[NoteApp]';
+    App.clip = { cards: JSON.parse(JSON.stringify(cards)), lines: JSON.parse(JSON.stringify(this.selectedLinesBetween(sel))), text };
     navigator.clipboard.writeText(text).catch(() => {});
     return true;
   },
@@ -292,7 +357,8 @@ const Actions = {
     const ids = this.cloneInto(App.board, clip.cards, clip.lines, pos.x - minX, pos.y - minY);
     Store.markDirty(App.boardId);
     Render.sync();
-    App.select(ids);
+    const fresh = new Set(ids);
+    App.select(ids.filter((id) => !fresh.has(App.cardById(id)?.col)));
   },
 
   // Перенести карточки в другую доску (бросили на карточку-доску)
@@ -300,6 +366,8 @@ const Actions = {
     const src = App.board;
     const dst = Store.get(targetId);
     if (!dst) return;
+    Render.syncChildPos();
+    ids = App.withChildren(ids); // колонка переезжает вместе с содержимым
     // нельзя положить доску внутрь самой себя
     for (const c of src.cards) {
       if (ids.has(c.id) && c.type === 'board' && Store.pathTo(targetId).some((b) => b.id === c.boardId)) {
@@ -312,8 +380,9 @@ const Actions = {
     const minX = Math.min(...moving.map((c) => c.x));
     const minY = Math.min(...moving.map((c) => c.y));
     // кладём правее существующего содержимого целевой доски
-    const maxX = dst.cards.length ? Math.max(...dst.cards.map((c) => c.x + (c.w || 200))) + 60 : 40;
-    const baseY = dst.cards.length ? Math.min(...dst.cards.map((c) => c.y)) : 40;
+    const top = dst.cards.filter((c) => !c.col);
+    const maxX = top.length ? Math.max(...top.map((c) => c.x + (c.w || 200))) + 60 : 40;
+    const baseY = top.length ? Math.min(...top.map((c) => c.y)) : 40;
     const keepLines = [];
     src.lines = src.lines.filter((l) => {
       const a = l.from.card && ids.has(l.from.card), b = l.to.card && ids.has(l.to.card);
@@ -321,6 +390,7 @@ const Actions = {
       return !(a || b);
     });
     for (const c of moving) {
+      if (c.col && !ids.has(c.col)) delete c.col;
       c.x = c.x - minX + maxX;
       c.y = c.y - minY + baseY;
       dst.cards.push(c);
@@ -338,12 +408,12 @@ const Actions = {
     // обновить счётчик на карточке-доске
     const bc = src.cards.find((c) => c.type === 'board' && c.boardId === targetId);
     if (bc) Render.card(bc);
-    toast(`Перемещено в «${dst.title}»: ${moving.length}`);
+    toast(`Перемещено в «${dst.title}»: ${moving.filter((c) => !c.col).length}`);
   },
 
   setNoteColor(color, style) {
     Store.snapshot();
-    for (const c of App.board.cards) if (App.selected.has(c.id) && c.type === 'note') {
+    for (const c of App.board.cards) if (App.selected.has(c.id) && (c.type === 'note' || c.type === 'column')) {
       if (color) c.color = color;
       if (style) c.style = style;
       Render.card(c);
@@ -355,8 +425,9 @@ const Actions = {
   order(front) {
     Store.snapshot();
     const b = App.board;
-    const sel = b.cards.filter((c) => App.selected.has(c.id));
-    const rest = b.cards.filter((c) => !App.selected.has(c.id));
+    // карточки внутри колонок не трогаем: их порядок в списке — это порядок в колонке
+    const sel = b.cards.filter((c) => App.selected.has(c.id) && !c.col);
+    const rest = b.cards.filter((c) => !App.selected.has(c.id) || c.col);
     b.cards = front ? [...rest, ...sel] : [...sel, ...rest];
     Store.markDirty(App.boardId);
     Render.sync();
@@ -398,7 +469,7 @@ const Edit = {
     this.stop();
     const card = App.cardById(id);
     const e = Render.els.get(id);
-    if (!card || !e || !['note', 'todo', 'table'].includes(card.type)) return;
+    if (!card || !e || !['note', 'todo', 'table', 'column'].includes(card.type)) return;
     if (!isNew) Store.snapshot(); // для новой карточки снимок уже сделан при создании
     App.editingId = id;
     App.select([id]);
@@ -408,6 +479,9 @@ const Edit = {
       target = $('.note-content', e);
       target.contentEditable = 'true';
       Format.show(id);
+    } else if (card.type === 'column') {
+      target = $('.col-title', e);
+      target.contentEditable = 'plaintext-only';
     } else if (card.type === 'table') {
       Table.enable(e);
       target = Table.startTarget(card, e, { isNew, point, focusCell });
@@ -443,6 +517,8 @@ const Edit = {
       }
     } else if (card.type === 'table') {
       Table.read(card, e);
+    } else if (card.type === 'column') {
+      card.title = $('.col-title', e).textContent.replace(/\s+/g, ' ').trim();
     }
     return card;
   },
@@ -455,7 +531,7 @@ const Edit = {
     if (card) {
       if (card.type === 'todo') card.items = card.items.filter((i) => i.text.trim());
       // пустую таблицу не удаляем: сетка сама по себе уже содержимое
-      const empty = card.type === 'table' ? false : card.type === 'note' ? !htmlToText(card.html) && !/<(li|br)/i.test(card.html) : !card.title && !card.items.length;
+      const empty = card.type === 'table' || card.type === 'column' ? false : card.type === 'note' ? !htmlToText(card.html) && !/<(li|br)/i.test(card.html) : !card.title && !card.items.length;
       if (empty && this.isNew) {
         App.board.cards = App.board.cards.filter((c) => c.id !== card.id);
         App.selected.delete(card.id);
@@ -468,6 +544,12 @@ const Edit = {
     Store.markDirty(App.boardId);
     window.getSelection().removeAllRanges();
     Render.selection();
+  },
+
+  // ---- заголовок колонки: Enter завершает ввод ----
+  columnKey(ev) {
+    const card = App.cardById(App.editingId);
+    if (card?.type === 'column' && ev.key === 'Enter') { ev.preventDefault(); this.stop(); }
   },
 
   // ---- клавиши внутри to-do ----
@@ -520,6 +602,7 @@ function cardText(c) {
   if (c.type === 'board') return Store.get(c.boardId)?.title || '';
   if (c.type === 'sketch') return '';
   if (c.type === 'table') return Table.searchText(c);
+  if (c.type === 'column') return c.title || '';
   return [c.name, c.caption].join(' ');
 }
 
@@ -527,7 +610,7 @@ function openSearch() {
   Edit.stop();
   const input = el('input', { class: 'input', placeholder: 'Искать во всех досках…' });
   const list = el('div', { class: 'search-results' });
-  const TYPE = { note: 'Заметка', todo: 'To-do', link: 'Ссылка', board: 'Доска', image: 'Картинка', file: 'Файл', sketch: 'Скетч', table: 'Таблица' };
+  const TYPE = { note: 'Заметка', todo: 'To-do', link: 'Ссылка', board: 'Доска', image: 'Картинка', file: 'Файл', sketch: 'Скетч', table: 'Таблица', column: 'Колонка' };
   let results = [];
   const run = () => {
     const q = input.value.trim().toLowerCase();

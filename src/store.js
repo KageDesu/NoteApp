@@ -2,7 +2,9 @@
 //
 // Формат доски:
 // { id, title, parentId, color, icon, view:{x,y,z}, cards:[...], lines:[...] }
-// Карточка: { id, type: 'note'|'board'|'link'|'todo'|'sketch'|'table'|'image'|'file', x, y, w, ...поля типа }
+// Карточка: { id, type: 'note'|'board'|'link'|'todo'|'sketch'|'table'|'column'|'image'|'file', x, y, w, ...поля типа }
+// Колонка:  { type: 'column', title, color, style: 'fill'|'stripe' }. Карточки внутри неё лежат в том же
+//           списке cards с полем col: <id колонки>; их порядок в списке — порядок сверху вниз, x/y не используются.
 // Линия:    { id, from: {card} | {x,y}, to: {card} | {x,y}, arrow: true }
 
 const HOME_ID = 'home';
