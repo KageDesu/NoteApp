@@ -564,3 +564,17 @@ button { font: inherit; color: inherit; }
 
 .board-icon.has-image { overflow: hidden; }
 .board-icon.has-image img { width: 100%; height: 100%; object-fit: cover; display: block; pointer-events: none; }
+
+/* ---------- мини-карта ---------- */
+#minimap {
+  position: absolute; right: 16px; bottom: 16px; z-index: 20;
+  padding: 6px; border-radius: 10px;
+  background: rgba(255, 255, 255, .92);
+  box-shadow: 0 8px 28px rgba(20, 24, 30, .18), 0 0 0 1px rgba(20, 24, 30, .06);
+  backdrop-filter: blur(6px);
+  pointer-events: none;
+  opacity: 0; transform: translateY(6px);
+  transition: opacity .18s ease, transform .18s ease;
+}
+#minimap.visible { opacity: 1; transform: none; }
+#minimap canvas { display: block; border-radius: 6px; background: #eef0f3; }

@@ -23,6 +23,7 @@ const App = {
   open(id, focusCardId) {
     if (!Store.get(id)) return;
     Edit.stop();
+    Minimap.hideNow();
     this.board.view = { ...this.view };
     Store.markDirty(this.boardId, false);
     this.boardId = id;

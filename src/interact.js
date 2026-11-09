@@ -184,6 +184,7 @@ const Interact = {
       App.view.x = d.vx + dx;
       App.view.y = d.vy + dy;
       App.applyView();
+      if (d.moved) Minimap.show();
       return;
     }
 
@@ -298,6 +299,7 @@ const Interact = {
     $$('.col-marker').forEach((x) => x.remove());
 
     if (d.kind === 'pan') {
+      Minimap.hideSoon();
       if (d.button === 2) {
         this.suppressCtx = d.moved;
       }
@@ -475,6 +477,8 @@ const Interact = {
       App.view.x -= (e.shiftKey ? e.deltaY : e.deltaX) * k;
       App.view.y -= (e.shiftKey ? 0 : e.deltaY) * k;
       App.applyView();
+      Minimap.show();
+      Minimap.hideSoon();
     }
   },
 
