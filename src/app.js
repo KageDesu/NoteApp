@@ -437,25 +437,73 @@ const Actions = {
     const b = Store.get(boardId);
     if (!b) return;
     const name = el('input', { class: 'input', value: b.title });
-    let color = b.color, icon = b.icon;
-    const colors = el('div', { class: 'swatches' }, BOARD_COLORS.map((c) => el('button', {
-      class: 'swatch' + (c === color ? ' on' : ''), style: { background: c },
-      onclick: (e) => { color = c; $$('.swatch', colors).forEach((s) => s.classList.remove('on')); e.currentTarget.classList.add('on'); prev.style.background = c; },
-    })));
+    let color = b.color, icon = b.icon, iconImage = b.iconImage || '';
+
+    const renderPreview = () => {
+      const fresh = boardIconEl({ color, icon, iconImage }, 'board-icon preview');
+      prevHolder.innerHTML = '';
+      prevHolder.append(fresh);
+    };
+    const prevHolder = el('div', { class: 'preview-holder' });
+
+    // --- цвет: готовые + свой ---
+    const markColor = (btn) => { $$('.swatch', colors).forEach((s) => s.classList.remove('on')); btn.classList.add('on'); };
+    const isPreset = BOARD_COLORS.includes(color);
+    const picker = el('input', { type: 'color', class: 'color-input', value: /^#[0-9a-f]{6}$/i.test(color) ? color : '#9b7cf6' });
+    const custom = el('button', {
+      class: 'swatch custom' + (isPreset ? '' : ' on has-color'),
+      title: 'Свой цвет…',
+      style: isPreset ? {} : { '--custom': color },
+    }, picker);
+    // Клик по кнопке открывает системное окно выбора цвета
+    custom.addEventListener('click', (e) => { if (e.target !== picker) picker.click(); });
+    picker.addEventListener('input', () => {
+      color = picker.value;
+      custom.style.setProperty('--custom', color);
+      custom.classList.add('has-color');
+      markColor(custom);
+      renderPreview();
+    });
+    const colors = el('div', { class: 'swatches' },
+      BOARD_COLORS.map((c) => el('button', {
+        class: 'swatch' + (c === color ? ' on' : ''), style: { background: c },
+        onclick: (e) => { color = c; markColor(e.currentTarget); renderPreview(); },
+      })),
+      custom);
+
+    // --- значок: эмодзи или своя картинка ---
     const icons = el('div', { class: 'icons' }, BOARD_ICONS.map((ic) => el('button', {
-      class: 'icon-btn' + (ic === icon ? ' on' : ''), text: ic,
-      onclick: (e) => { icon = ic; $$('.icon-btn', icons).forEach((s) => s.classList.remove('on')); e.currentTarget.classList.add('on'); prev.firstChild.textContent = ic; },
+      class: 'icon-btn' + (!iconImage && ic === icon ? ' on' : ''), text: ic,
+      onclick: (e) => {
+        icon = ic;
+        iconImage = '';
+        $$('.icon-btn', icons).forEach((s) => s.classList.remove('on'));
+        e.currentTarget.classList.add('on');
+        uploadBtn.textContent = 'Загрузить картинку…';
+        renderPreview();
+      },
     })));
-    const prev = el('div', { class: 'board-icon preview', style: { background: color } }, el('span', { text: icon }));
+    const uploadBtn = el('button', { class: 'btn upload-btn', title: 'Выбрать картинку на компьютере. Чтобы вернуть эмодзи — щёлкните по любому значку.', text: iconImage ? 'Заменить картинку…' : 'Загрузить картинку…' });
+    uploadBtn.addEventListener('click', async () => {
+      const [a] = await window.api.pickFiles('image');
+      if (!a) return;
+      iconImage = a.file;
+      $$('.icon-btn', icons).forEach((s) => s.classList.remove('on'));
+      uploadBtn.textContent = 'Заменить картинку…';
+      renderPreview();
+    });
+
+    renderPreview();
     const ok = await modal({
-      title: 'Настройки доски', okText: 'Сохранить', wide: true,
-      body: el('div', { class: 'board-edit' }, el('div', { class: 'board-edit-top' }, prev, name), el('label', { text: 'Цвет' }), colors, el('label', { text: 'Значок' }), icons),
+      title: 'Настройки доски', okText: 'Сохранить', wide: true, extra: uploadBtn,
+      body: el('div', { class: 'board-edit' }, el('div', { class: 'board-edit-top' }, prevHolder, name), el('label', { text: 'Цвет' }), colors, el('label', { text: 'Значок' }), icons),
       onOk: () => true,
     });
     if (!ok) return;
     b.title = name.value.trim() || b.title;
     b.color = color;
     b.icon = icon;
+    if (iconImage) b.iconImage = iconImage; else delete b.iconImage;
     Store.markDirty(b.id);
     Render.board();
     App.header();

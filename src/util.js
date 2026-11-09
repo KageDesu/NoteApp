@@ -11,7 +11,13 @@ function el(tag, attrs = {}, ...children) {
   for (const [k, v] of Object.entries(attrs)) {
     if (v == null || v === false) continue;
     if (k === 'class') e.className = v;
-    else if (k === 'style' && typeof v === 'object') Object.assign(e.style, v);
+    else if (k === 'style' && typeof v === 'object') {
+      // CSS-переменные (--name) через Object.assign не задаются — только через setProperty
+      for (const [prop, val] of Object.entries(v)) {
+        if (prop.startsWith('--')) e.style.setProperty(prop, val);
+        else e.style[prop] = val;
+      }
+    }
     else if (k.startsWith('on')) e.addEventListener(k.slice(2), v);
     else if (k === 'html') e.innerHTML = v;
     else if (k === 'text') e.textContent = v;
@@ -114,7 +120,7 @@ function toast(msg, ms = 2200) {
 }
 
 // ---------- Модальные окна (window.prompt в Electron не работает) ----------
-function modal({ title, body, okText = 'OK', cancelText = 'Отмена', danger = false, onOk, wide = false }) {
+function modal({ title, body, okText = 'OK', cancelText = 'Отмена', danger = false, onOk, wide = false, extra = null }) {
   return new Promise((resolve) => {
     const root = $('#modal-root');
     const close = (val) => { root.innerHTML = ''; resolve(val); };
@@ -123,7 +129,7 @@ function modal({ title, body, okText = 'OK', cancelText = 'Отмена', danger
     const box = el('div', { class: 'modal' + (wide ? ' wide' : '') },
       title ? el('h3', { text: title }) : null,
       body,
-      el('div', { class: 'modal-actions' }, cancel, ok));
+      el('div', { class: 'modal-actions' }, extra ? el('div', { class: 'modal-extra' }, extra) : null, cancel, ok));
     const back = el('div', { class: 'modal-back' }, box);
     back.addEventListener('pointerdown', (e) => { if (e.target === back) close(null); });
     ok.addEventListener('click', () => close(onOk ? onOk() : true));
@@ -131,7 +137,7 @@ function modal({ title, body, okText = 'OK', cancelText = 'Отмена', danger
     box.addEventListener('keydown', (e) => {
       e.stopPropagation();
       if (e.key === 'Escape') close(null);
-      if (e.key === 'Enter' && e.target.tagName !== 'TEXTAREA') { e.preventDefault(); ok.click(); }
+      if (e.key === 'Enter' && e.target.tagName !== 'TEXTAREA' && !e.target.closest('.modal-extra')) { e.preventDefault(); ok.click(); }
     });
     root.append(back);
     const first = box.querySelector('input,textarea') || ok;

@@ -17,6 +17,18 @@ const NOTE_COLORS = {
 
 const CARD_DEFAULT_W = { note: 280, link: 320, todo: 280, image: 320, file: 240, board: 128, sketch: 360, table: 420, column: 300 };
 
+// Значок доски: своя картинка (iconImage) или эмодзи на цветном фоне
+function boardIconEl(b, cls = 'board-icon') {
+  const e = el('div', { class: cls + (b.iconImage ? ' has-image' : ''), style: { background: b.color } });
+  if (b.iconImage) {
+    e.append(el('img', { src: assetUrl(b.iconImage), draggable: 'false', alt: '',
+      onerror: (ev) => { ev.target.replaceWith(el('span', { text: b.icon || '📁' })); e.classList.remove('has-image'); } }));
+  } else {
+    e.append(el('span', { text: b.icon || '📁' }));
+  }
+  return e;
+}
+
 const Render = {
   els: new Map(), // cardId -> element
 
@@ -159,7 +171,7 @@ const Render = {
     if (n.boards) parts.push(n.boards + ' ' + plural(n.boards, 'доска', 'доски', 'досок'));
     if (n.cards || !n.boards) parts.push(n.cards + ' ' + plural(n.cards, 'карточка', 'карточки', 'карточек'));
     e.append(
-      el('div', { class: 'board-icon', style: { background: b.color } }, el('span', { text: b.icon || '📁' })),
+      boardIconEl(b),
       el('div', { class: 'board-title', text: b.title }),
       el('div', { class: 'board-meta', text: parts.join(', ') }),
     );

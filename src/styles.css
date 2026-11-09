@@ -545,3 +545,22 @@ button { font: inherit; color: inherit; }
 .tbl-add:hover { background: var(--accent); color: #fff; }
 .tbl-add-col { right: -40px; top: 4px; }
 .tbl-add-row { left: -46px; top: calc(100% + 8px); }
+
+/* ---------- свой цвет и своя картинка для доски ---------- */
+.swatch.custom {
+  position: relative; overflow: hidden;
+  background: conic-gradient(from 0deg, #f44, #fb3, #ee4, #5d5, #4cf, #57f, #c5f, #f44);
+}
+.swatch.custom::after {
+  content: "+"; position: absolute; inset: 5px; border-radius: 4px; background: #fff;
+  display: grid; place-items: center; font: 600 15px/1 var(--font); color: #5b6069;
+}
+.swatch.custom.has-color::after { content: ""; background: var(--custom); box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .12); }
+.swatch.custom:hover::after { filter: brightness(.95); }
+.color-input { position: absolute; left: 0; bottom: 0; width: 1px; height: 1px; opacity: 0; pointer-events: none; border: 0; padding: 0; }
+
+.modal-extra { margin-right: auto; }
+.preview-holder { flex: none; }
+
+.board-icon.has-image { overflow: hidden; }
+.board-icon.has-image img { width: 100%; height: 100%; object-fit: cover; display: block; pointer-events: none; }
